@@ -7,8 +7,15 @@
 //
 
 #import "AppDelegate.h"
+#import "SWRevealViewController.h"
+#import "MainViewController.h"
+#import "LeftMenuViewController.h"
+#import "RKObjectManager+EntitiesMapping.h"
 
-@interface AppDelegate ()
+#import <RestKit/RestKit.h>
+#import <RestKit/CoreData.h>
+
+@interface AppDelegate ()<SWRevealViewControllerDelegate>
 
 @end
 
@@ -17,6 +24,24 @@
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     // Override point for customization after application launch.
+    
+    [self setupRest];
+    
+    UIStoryboard *storyboard = [UIStoryboard storyboardWithName:@"Main" bundle:nil];
+    MainViewController *mainViewController = (MainViewController *)[storyboard instantiateViewControllerWithIdentifier:@"MainViewController"];
+    LeftMenuViewController *leftViewController = (LeftMenuViewController *)[storyboard instantiateViewControllerWithIdentifier:@"LeftMenuViewController"];
+    
+    UINavigationController *frontNavigationController = [[UINavigationController alloc] initWithRootViewController:mainViewController];
+    UINavigationController *rearNavigationController = [[UINavigationController alloc] initWithRootViewController:leftViewController];
+    
+    SWRevealViewController *revealController = [[SWRevealViewController alloc] initWithRearViewController:rearNavigationController frontViewController:frontNavigationController];
+    revealController.delegate = self;
+    
+    self.viewController = revealController;
+    
+    self.window.rootViewController = self.viewController;
+    [self.window makeKeyWindow];
+    
     return YES;
 }
 
@@ -47,6 +72,134 @@
     // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
     // Saves changes in the application's managed object context before the application terminates.
     [self saveContext];
+}
+
+// Returns the URL to the application's Documents directory.
+- (NSURL *)applicationDocumentsDirectory
+{
+    return [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] lastObject];
+}
+
+- (void)setupRest {
+    
+    NSURL *baseURL = [NSURL URLWithString:@"http://jameslamberg.com"];
+    
+    // Set high log level
+    RKLogConfigureByName("RestKit/ObjectMapping", RKLogLevelTrace);
+    RKLogConfigureByName("RestKit/Network", RKLogLevelOff);
+    RKLogConfigureByName("RestKit/CoreData/Cache", RKLogLevelOff);
+    
+    // Setup MODEL
+    
+    NSURL *modelURL = [NSURL fileURLWithPath:[[NSBundle mainBundle] pathForResource:@"GasGuide" ofType:@"momd"]];
+    
+    // NOTE: Due to an iOS bug, the managed object model returned is immutable.
+    NSManagedObjectModel *managedObjectModel = [[[NSManagedObjectModel alloc] initWithContentsOfURL:modelURL] mutableCopy];
+    
+    // Setup STORE
+    
+    RKManagedObjectStore *managedObjectStore = [[RKManagedObjectStore alloc] initWithManagedObjectModel:managedObjectModel];
+    
+    
+    // Initialize the Core Data stack
+    [managedObjectStore createPersistentStoreCoordinator];
+    
+    NSError *error = nil;
+    
+    NSDictionary * dictOption = [NSDictionary dictionaryWithObject:[NSNumber numberWithBool:YES] forKey:NSSQLiteManualVacuumOption];
+    
+    [managedObjectStore addSQLitePersistentStoreAtPath:[[[self applicationDocumentsDirectory] path] stringByAppendingPathComponent:@"GasGuide.sqlite"]
+                                fromSeedDatabaseAtPath:nil
+                                     withConfiguration:nil
+                                               options:@{ NSSQLitePragmasOption : @{ @"journal_mode" : @"DELETE" } }
+                                                 error:&error];
+    
+    // error setting up the file for the coredata.
+    if (error)
+    {
+        // trying to remove the existing one, and let Coredata to create new ones.
+        NSLog(@"Whoops, couldn't create store. First attempt: %@", error);
+        
+        // remove the sqlite files
+        [self removeCoreDateFiles];
+        
+        error = nil;
+        
+        // force to dowload the filter info from the database
+        
+        [managedObjectStore addSQLitePersistentStoreAtPath:[[[self applicationDocumentsDirectory] path] stringByAppendingPathComponent:@"GasGuide.sqlite"]
+                                    fromSeedDatabaseAtPath:nil
+                                         withConfiguration:nil
+                                                   options:@{ NSSQLitePragmasOption : @{ @"journal_mode" : @"DELETE" } }
+                                                     error:&error];
+        
+        if (error)
+        {
+            // error setting up the coredata file.
+            NSLog(@"Whoops, couldn't create store: %@", error);
+            //            initialDB_GoldenSpear.sqlite
+            return;
+        }
+        
+        //        return;
+    }
+    
+    [managedObjectStore createManagedObjectContexts];
+    
+    // Set the default store shared instance
+    [RKManagedObjectStore setDefaultStore:managedObjectStore];
+    
+    // Setup CACHE
+    
+    managedObjectStore.managedObjectCache = [[RKFetchRequestManagedObjectCache alloc] init];
+    //initWithManagedObjectContext:managedObjectStore.persistentStoreManagedObjectContext];
+    
+    // Setup OBJECT MANAGER
+    
+    [RKObjectManager managerWithBaseURL:baseURL];
+    
+    [RKObjectManager sharedManager].managedObjectStore = managedObjectStore;
+    
+    //[[RKObjectManager sharedManager].managedObjectStore.mainQueueManagedObjectContext setRetainsRegisteredObjects:YES];
+    
+    // Setup objects mapping
+    [[RKObjectManager sharedManager] defineMappings];
+}
+
+-(void) removeCoreDateFiles
+{
+    [[RKObjectManager sharedManager].operationQueue cancelAllOperations];
+    
+    [[NSURLCache sharedURLCache] removeAllCachedResponses];
+    
+    NSFileManager * fileManager = [NSFileManager defaultManager];
+    
+    NSString * storePath = [[[self applicationDocumentsDirectory] path] stringByAppendingPathComponent:@"GasGuide.sqlite"];
+    
+    NSLog(@"Deleting: %@", storePath);
+    
+    [fileManager removeItemAtPath:storePath error:NULL];
+    
+    // WE WILL ALWAYS REMOVE -SHM AND -WAL TO AVOID MALFORMATIONS!!!
+    //if (DOWNLOAD_3_FILES)
+    {
+        storePath = [[[self applicationDocumentsDirectory] path] stringByAppendingPathComponent:@"GasGuide.sqlite-shm"];
+        
+        NSLog(@"Deleting: %@", storePath);
+        
+        [fileManager removeItemAtPath:storePath error:NULL];
+        
+        storePath = [[[self applicationDocumentsDirectory] path] stringByAppendingPathComponent:@"GasGuide.sqlite-wal"];
+        
+        NSLog(@"Deleting: %@", storePath);
+        
+        [fileManager removeItemAtPath:storePath error:NULL];
+    }
+    
+    [RKObjectManager setSharedManager:nil];
+    
+    [RKManagedObjectStore setDefaultStore:nil];
+    
 }
 
 

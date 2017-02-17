@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workspace
+   version = "1.0">
+   <FileRef
+      location = "group:MainCategory+CoreDataClass.h">
+   </FileRef>
+   <FileRef
+      location = "group:MainCategory+CoreDataClass.m">
+   </FileRef>
+   <FileRef
+      location = "group:MainCategory+CoreDataProperties.h">
+   </FileRef>
+   <FileRef
+      location = "group:MainCategory+CoreDataProperties.m">
+   </FileRef>
+   <FileRef
+      location = "group:Article+CoreDataClass.h">
+   </FileRef>
+   <FileRef
+      location = "group:Article+CoreDataClass.m">
+   </FileRef>
+   <FileRef
+      location = "group:Article+CoreDataProperties.h">
+   </FileRef>
+   <FileRef
+      location = "group:Article+CoreDataProperties.m">
+   </FileRef>
+   <FileRef
+      location = "group:GasGuide.xcodeproj">
+   </FileRef>
+   <FileRef
+      location = "group:Pods/Pods.xcodeproj">
+   </FileRef>
+</Workspace>
